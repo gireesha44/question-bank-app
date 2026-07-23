@@ -159,8 +159,12 @@ app.post("/api/export", authenticate, async (req, res) => {
   res.send(buffer);
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server running at http://localhost:${PORT}`);
-  console.log(`Default admin login -> username: admin / password: admin123`);
-});
+if (process.env.VERCEL !== "1") {
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => {
+    console.log(`Server running at http://localhost:${PORT}`);
+    console.log("Default admin login -> username: admin / password: admin123");
+  });
+}
+
+module.exports = app;
