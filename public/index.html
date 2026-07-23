@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Login — Question Bank</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="login-wrap">
+    <div class="card login-card">
+      <h2>Sign in</h2>
+      <form id="loginForm">
+        <label for="username">Username</label>
+        <input id="username" name="username" autocomplete="username" required />
+
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required />
+
+        <button class="primary" type="submit">Log in</button>
+        <div class="error" id="errorMsg"></div>
+      </form>
+      <div class="hint">Default admin: <strong>admin</strong> / <strong>admin123</strong></div>
+    </div>
+  </div>
+
+  <script>
+    // If already logged in, skip straight to the right dashboard.
+    const existingToken = localStorage.getItem("token");
+    if (existingToken) {
+      redirectByRole();
+    }
+
+    async function redirectByRole() {
+      try {
+        const res = await fetch("/api/me", {
+          headers: { Authorization: `Bearer ${localStorage.getItem("token")}` }
+        });
+        if (!res.ok) throw new Error("invalid session");
+        const me = await res.json();
+        window.location.href = me.role === "admin" ? "admin.html" : "user.html";
+      } catch {
+        localStorage.removeItem("token");
+      }
+    }
+
+    document.getElementById("loginForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const errorMsg = document.getElementById("errorMsg");
+      errorMsg.textContent = "";
+      const username = document.getElementById("username").value.trim();
+      const password = document.getElementById("password").value;
+
+      try {
+        const res = await fetch("/api/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          errorMsg.textContent = data.error || "Login failed";
+          return;
+        }
+        localStorage.setItem("token", data.token);
+        localStorage.setItem("role", data.user.role);
+        window.location.href = data.user.role === "admin" ? "admin.html" : "user.html";
+      } catch (err) {
+        errorMsg.textContent = "Could not reach server";
+      }
+    });
+  </script>
+</body>
+</html>

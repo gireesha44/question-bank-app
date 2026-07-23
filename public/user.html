@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>My Module — Question Bank</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="topbar">
+    <h1 id="pageTitle">My Module</h1>
+    <button id="logoutBtn">Log out</button>
+  </div>
+
+  <div class="layout">
+    <div id="noModuleMsg" class="card" style="display:none;">
+      <p class="empty">No module has been assigned to you yet. Please contact your admin.</p>
+    </div>
+
+    <div id="mainArea" class="two-col" style="display:none;">
+      <div class="card">
+        <h2 id="questionsHeading">Questions</h2>
+        <div id="questionsList"></div>
+      </div>
+
+      <div class="card preview-panel">
+        <h2>Preview (<span id="previewCount">0</span> selected)</h2>
+        <div id="previewList"></div>
+        <div id="previewEmpty" class="empty">No questions added yet. Click "+" to add one.</div>
+        <button class="export-btn" id="exportBtn" disabled>Export to DOCX</button>
+        <div class="error" id="exportError"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const token = localStorage.getItem("token");
+    if (!token) window.location.href = "index.html";
+
+    function authHeaders(extra = {}) {
+      return { Authorization: `Bearer ${token}`, ...extra };
+    }
+
+    let allQuestions = [];
+    const selected = new Map(); // id -> question text
+
+    async function init() {
+      const meRes = await fetch("/api/me", { headers: authHeaders() });
+      if (!meRes.ok) return (window.location.href = "index.html");
+      const me = await meRes.json();
+      if (me.role === "admin") return (window.location.href = "admin.html");
+
+      const qRes = await fetch("/api/questions", { headers: authHeaders() });
+      const qData = await qRes.json();
+
+      if (!qRes.ok) {
+        document.getElementById("noModuleMsg").style.display = "block";
+        document.getElementById("noModuleMsg").querySelector("p").textContent =
+          qData.error || "No module assigned.";
+        return;
+      }
+
+      document.getElementById("pageTitle").textContent = `Module: ${qData.module}`;
+      document.getElementById("questionsHeading").textContent = `${qData.module} — Questions`;
+      allQuestions = qData.questions;
+      document.getElementById("mainArea").style.display = "grid";
+      renderQuestions();
+      renderPreview();
+    }
+
+    function renderQuestions() {
+      const list = document.getElementById("questionsList");
+      list.innerHTML = "";
+      allQuestions.forEach((q) => {
+        const row = document.createElement("div");
+        row.className = "question-item";
+        const isAdded = selected.has(q.id);
+        row.innerHTML = `
+          <p>${q.text}</p>
+          <button class="add-btn" data-id="${q.id}" ${isAdded ? "disabled" : ""}>${isAdded ? "✓" : "+"}</button>
+        `;
+        list.appendChild(row);
+      });
+
+      list.querySelectorAll(".add-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const id = btn.getAttribute("data-id");
+          const q = allQuestions.find((x) => x.id === id);
+          if (q && !selected.has(id)) {
+            selected.set(id, q.text);
+            renderQuestions();
+            renderPreview();
+          }
+        });
+      });
+    }
+
+    function renderPreview() {
+      const previewList = document.getElementById("previewList");
+      const previewEmpty = document.getElementById("previewEmpty");
+      const exportBtn = document.getElementById("exportBtn");
+      const previewCount = document.getElementById("previewCount");
+
+      previewList.innerHTML = "";
+      previewCount.textContent = selected.size;
+
+      if (selected.size === 0) {
+        previewEmpty.style.display = "block";
+        exportBtn.disabled = true;
+        return;
+      }
+      previewEmpty.style.display = "none";
+      exportBtn.disabled = false;
+
+      selected.forEach((text, id) => {
+        const item = document.createElement("div");
+        item.className = "preview-item";
+        item.innerHTML = `
+          <span>${text}</span>
+          <button class="remove-btn" data-id="${id}">remove</button>
+        `;
+        previewList.appendChild(item);
+      });
+
+      previewList.querySelectorAll(".remove-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          selected.delete(btn.getAttribute("data-id"));
+          renderQuestions();
+          renderPreview();
+        });
+      });
+    }
+
+    document.getElementById("exportBtn").addEventListener("click", async () => {
+      const errorEl = document.getElementById("exportError");
+      errorEl.textContent = "";
+      try {
+        const res = await fetch("/api/export", {
+          method: "POST",
+          headers: authHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({ questionIds: Array.from(selected.keys()) })
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          errorEl.textContent = data.error || "Export failed";
+          return;
+        }
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "selected_questions.docx";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+      } catch (err) {
+        errorEl.textContent = "Could not reach server";
+      }
+    });
+
+    document.getElementById("logoutBtn").addEventListener("click", async () => {
+      await fetch("/api/logout", { method: "POST", headers: authHeaders() });
+      localStorage.clear();
+      window.location.href = "index.html";
+    });
+
+    init();
+  </script>
+</body>
+</html>

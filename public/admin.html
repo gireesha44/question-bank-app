@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Admin — Question Bank</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="topbar">
+    <h1>Admin Dashboard</h1>
+    <button id="logoutBtn">Log out</button>
+  </div>
+
+  <div class="layout">
+    <div class="card">
+      <h2>Create a new user</h2>
+      <form id="createUserForm" class="inline-form">
+        <div>
+          <label for="newUsername">Username</label>
+          <input id="newUsername" required />
+        </div>
+        <div>
+          <label for="newPassword">Password</label>
+          <input id="newPassword" type="password" required />
+        </div>
+        <div>
+          <label for="newModule">Assign module</label>
+          <select id="newModule">
+            <option value="">— none yet —</option>
+            <option value="VIII CBSE">VIII CBSE</option>
+            <option value="NEET">NEET</option>
+          </select>
+        </div>
+        <div></div>
+        <button type="submit">Create user</button>
+      </form>
+      <div class="error" id="createError"></div>
+    </div>
+
+    <div class="card">
+      <h2>All users</h2>
+      <table>
+        <thead>
+          <tr><th>Username</th><th>Role</th><th>Assigned module</th><th>Change module</th></tr>
+        </thead>
+        <tbody id="usersBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    const token = localStorage.getItem("token");
+    if (!token) window.location.href = "index.html";
+
+    function authHeaders(extra = {}) {
+      return { Authorization: `Bearer ${token}`, ...extra };
+    }
+
+    async function requireAdmin() {
+      const res = await fetch("/api/me", { headers: authHeaders() });
+      if (!res.ok) return (window.location.href = "index.html");
+      const me = await res.json();
+      if (me.role !== "admin") window.location.href = "user.html";
+    }
+
+    async function loadUsers() {
+      const res = await fetch("/api/admin/users", { headers: authHeaders() });
+      if (!res.ok) return;
+      const users = await res.json();
+      const tbody = document.getElementById("usersBody");
+      tbody.innerHTML = "";
+      users.forEach((u) => {
+        const tr = document.createElement("tr");
+
+        const moduleCell =
+          u.role === "admin"
+            ? '<span class="empty">n/a</span>'
+            : u.module
+            ? `<span class="badge">${u.module}</span>`
+            : '<span class="empty">unassigned</span>';
+
+        const actionCell =
+          u.role === "admin"
+            ? ""
+            : `<select data-id="${u.id}" class="moduleSelect">
+                <option value="">— select —</option>
+                <option value="VIII CBSE" ${u.module === "VIII CBSE" ? "selected" : ""}>VIII CBSE</option>
+                <option value="NEET" ${u.module === "NEET" ? "selected" : ""}>NEET</option>
+              </select>`;
+
+        tr.innerHTML = `
+          <td>${u.username}</td>
+          <td>${u.role}</td>
+          <td>${moduleCell}</td>
+          <td>${actionCell}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      document.querySelectorAll(".moduleSelect").forEach((sel) => {
+        sel.addEventListener("change", async (e) => {
+          const id = e.target.getAttribute("data-id");
+          const module = e.target.value;
+          if (!module) return;
+          await fetch(`/api/admin/users/${id}/module`, {
+            method: "PUT",
+            headers: authHeaders({ "Content-Type": "application/json" }),
+            body: JSON.stringify({ module })
+          });
+          loadUsers();
+        });
+      });
+    }
+
+    document.getElementById("createUserForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const errorEl = document.getElementById("createError");
+      errorEl.textContent = "";
+      const username = document.getElementById("newUsername").value.trim();
+      const password = document.getElementById("newPassword").value;
+      const module = document.getElementById("newModule").value || undefined;
+
+      const res = await fetch("/api/admin/users", {
+        method: "POST",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ username, password, module })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        errorEl.textContent = data.error || "Could not create user";
+        return;
+      }
+      document.getElementById("createUserForm").reset();
+      loadUsers();
+    });
+
+    document.getElementById("logoutBtn").addEventListener("click", async () => {
+      await fetch("/api/logout", { method: "POST", headers: authHeaders() });
+      localStorage.clear();
+      window.location.href = "index.html";
+    });
+
+    requireAdmin().then(loadUsers);
+  </script>
+</body>
+</html>
